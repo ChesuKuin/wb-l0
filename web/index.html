@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Поиск заказа</title>
+<style>
+  body {
+    font-family: -apple-system, Segoe UI, Arial, sans-serif;
+    max-width: 700px;
+    margin: 60px auto;
+    padding: 0 20px;
+    color: #222;
+    background: #fafafa;
+  }
+  h1 { font-size: 22px; }
+  .search-box {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+  input {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 15px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+  }
+  button {
+    padding: 10px 18px;
+    font-size: 15px;
+    border: none;
+    border-radius: 6px;
+    background: #2563eb;
+    color: white;
+    cursor: pointer;
+  }
+  button:hover { background: #1d4ed8; }
+  #result {
+    background: white;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    padding: 16px;
+    white-space: pre-wrap;
+    font-family: Consolas, monospace;
+    font-size: 13px;
+    min-height: 40px;
+  }
+  .error { color: #c0392b; }
+  .section { margin-bottom: 10px; }
+  .label { font-weight: 600; color: #444; }
+</style>
+</head>
+<body>
+
+<h1>Поиск заказа по order_uid</h1>
+
+<div class="search-box">
+  <input id="orderId" type="text" placeholder="Введите order_uid, например b563feb7b2b84b6test">
+  <button onclick="searchOrder()">Найти</button>
+</div>
+
+<div id="result">Введите ID заказа и нажмите «Найти»</div>
+
+<script>
+async function searchOrder() {
+  const id = document.getElementById('orderId').value.trim();
+  const resultEl = document.getElementById('result');
+
+  if (!id) {
+    resultEl.innerHTML = '<span class="error">Введите ID заказа</span>';
+    return;
+  }
+
+  resultEl.textContent = 'Загрузка...';
+
+  try {
+    const res = await fetch('/order/' + encodeURIComponent(id));
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({error: 'Заказ не найден'}));
+      resultEl.innerHTML = '<span class="error">' + (err.error || 'Ошибка') + '</span>';
+      return;
+    }
+    const order = await res.json();
+    resultEl.innerHTML = renderOrder(order);
+  } catch (e) {
+    resultEl.innerHTML = '<span class="error">Ошибка запроса: ' + e.message + '</span>';
+  }
+}
+
+function renderOrder(o) {
+  let itemsHtml = (o.items || []).map(it =>
+    `  • ${it.name} — ${it.brand}, цена: ${it.total_price} (скидка ${it.sale}%)`
+  ).join('\n');
+
+  return `<div class="section"><span class="label">Order UID:</span> ${o.order_uid}</div>
+<div class="section"><span class="label">Трек-номер:</span> ${o.track_number}</div>
+<div class="section"><span class="label">Клиент:</span> ${o.customer_id}</div>
+<div class="section"><span class="label">Дата создания:</span> ${o.date_created}</div>
+
+<div class="section"><span class="label">Доставка:</span>
+  ${o.delivery ? `${o.delivery.name}, ${o.delivery.city}, ${o.delivery.address}
+  Телефон: ${o.delivery.phone}, Email: ${o.delivery.email}` : 'нет данных'}
+</div>
+
+<div class="section"><span class="label">Оплата:</span>
+  ${o.payment ? `${o.payment.amount} ${o.payment.currency}, провайдер: ${o.payment.provider}, банк: ${o.payment.bank}` : 'нет данных'}
+</div>
+
+<div class="section"><span class="label">Товары:</span>
+${itemsHtml || '  нет товаров'}
+</div>`;
+}
+
+document.getElementById('orderId').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') searchOrder();
+});
+</script>
+
+</body>
+</html>
