@@ -40,7 +40,6 @@
     border: 1px solid #e5e5e5;
     border-radius: 8px;
     padding: 16px;
-    white-space: pre-wrap;
     font-family: Consolas, monospace;
     font-size: 13px;
     min-height: 40px;
@@ -48,6 +47,7 @@
   .error { color: #c0392b; }
   .section { margin-bottom: 10px; }
   .label { font-weight: 600; color: #444; }
+  .item-line { margin-left: 12px; }
 </style>
 </head>
 <body>
@@ -56,62 +56,128 @@
 
 <div class="search-box">
   <input id="orderId" type="text" placeholder="Введите order_uid, например b563feb7b2b84b6test">
-  <button onclick="searchOrder()">Найти</button>
+  <button id="searchBtn">Найти</button>
 </div>
 
 <div id="result">Введите ID заказа и нажмите «Найти»</div>
 
 <script>
+const resultEl = document.getElementById('result');
+const inputEl = document.getElementById('orderId');
+
+function clearResult() {
+  while (resultEl.firstChild) resultEl.removeChild(resultEl.firstChild);
+}
+
+function showError(message) {
+  clearResult();
+  const span = document.createElement('span');
+  span.className = 'error';
+  span.textContent = message; // textContent — не HTML, безопасно для любых данных
+  resultEl.appendChild(span);
+}
+
+function showText(message) {
+  clearResult();
+  resultEl.textContent = message;
+}
+
+// Создаёт <div class="section"><span class="label">label:</span> value</div>
+// Все значения вставляются через textContent — HTML/скрипты в данных заказа
+// не исполняются, а просто отображаются как текст.
+function section(label, value) {
+  const div = document.createElement('div');
+  div.className = 'section';
+
+  const labelSpan = document.createElement('span');
+  labelSpan.className = 'label';
+  labelSpan.textContent = label + ':';
+
+  div.appendChild(labelSpan);
+  div.appendChild(document.createTextNode(' ' + value));
+  return div;
+}
+
+function renderOrder(o) {
+  clearResult();
+
+  resultEl.appendChild(section('Order UID', o.order_uid ?? ''));
+  resultEl.appendChild(section('Трек-номер', o.track_number ?? ''));
+  resultEl.appendChild(section('Клиент', o.customer_id ?? ''));
+  resultEl.appendChild(section('Дата создания', o.date_created ?? ''));
+
+  if (o.delivery) {
+    const d = o.delivery;
+    const text = `${d.name ?? ''}, ${d.city ?? ''}, ${d.address ?? ''} — тел: ${d.phone ?? ''}, email: ${d.email ?? ''}`;
+    resultEl.appendChild(section('Доставка', text));
+  } else {
+    resultEl.appendChild(section('Доставка', 'нет данных'));
+  }
+
+  if (o.payment) {
+    const p = o.payment;
+    const text = `${p.amount ?? ''} ${p.currency ?? ''}, провайдер: ${p.provider ?? ''}, банк: ${p.bank ?? ''}`;
+    resultEl.appendChild(section('Оплата', text));
+  } else {
+    resultEl.appendChild(section('Оплата', 'нет данных'));
+  }
+
+  const itemsHeader = document.createElement('div');
+  itemsHeader.className = 'section';
+  const itemsLabel = document.createElement('span');
+  itemsLabel.className = 'label';
+  itemsLabel.textContent = 'Товары:';
+  itemsHeader.appendChild(itemsLabel);
+  resultEl.appendChild(itemsHeader);
+
+  const items = o.items || [];
+  if (items.length === 0) {
+    const line = document.createElement('div');
+    line.className = 'item-line';
+    line.textContent = 'нет товаров';
+    resultEl.appendChild(line);
+  } else {
+    for (const it of items) {
+      const line = document.createElement('div');
+      line.className = 'item-line';
+      line.textContent = `• ${it.name ?? ''} — ${it.brand ?? ''}, цена: ${it.total_price ?? ''} (скидка ${it.sale ?? 0}%)`;
+      resultEl.appendChild(line);
+    }
+  }
+}
+
 async function searchOrder() {
-  const id = document.getElementById('orderId').value.trim();
-  const resultEl = document.getElementById('result');
+  const id = inputEl.value.trim();
 
   if (!id) {
-    resultEl.innerHTML = '<span class="error">Введите ID заказа</span>';
+    showError('Введите ID заказа');
     return;
   }
 
-  resultEl.textContent = 'Загрузка...';
+  showText('Загрузка...');
 
   try {
     const res = await fetch('/order/' + encodeURIComponent(id));
     if (!res.ok) {
-      const err = await res.json().catch(() => ({error: 'Заказ не найден'}));
-      resultEl.innerHTML = '<span class="error">' + (err.error || 'Ошибка') + '</span>';
+      let message = 'Заказ не найден';
+      try {
+        const err = await res.json();
+        if (err && err.error) message = err.error;
+      } catch (_) {
+        // тело ответа не JSON — оставляем сообщение по умолчанию
+      }
+      showError(message);
       return;
     }
     const order = await res.json();
-    resultEl.innerHTML = renderOrder(order);
+    renderOrder(order);
   } catch (e) {
-    resultEl.innerHTML = '<span class="error">Ошибка запроса: ' + e.message + '</span>';
+    showError('Ошибка запроса: ' + e.message);
   }
 }
 
-function renderOrder(o) {
-  let itemsHtml = (o.items || []).map(it =>
-    `  • ${it.name} — ${it.brand}, цена: ${it.total_price} (скидка ${it.sale}%)`
-  ).join('\n');
-
-  return `<div class="section"><span class="label">Order UID:</span> ${o.order_uid}</div>
-<div class="section"><span class="label">Трек-номер:</span> ${o.track_number}</div>
-<div class="section"><span class="label">Клиент:</span> ${o.customer_id}</div>
-<div class="section"><span class="label">Дата создания:</span> ${o.date_created}</div>
-
-<div class="section"><span class="label">Доставка:</span>
-  ${o.delivery ? `${o.delivery.name}, ${o.delivery.city}, ${o.delivery.address}
-  Телефон: ${o.delivery.phone}, Email: ${o.delivery.email}` : 'нет данных'}
-</div>
-
-<div class="section"><span class="label">Оплата:</span>
-  ${o.payment ? `${o.payment.amount} ${o.payment.currency}, провайдер: ${o.payment.provider}, банк: ${o.payment.bank}` : 'нет данных'}
-</div>
-
-<div class="section"><span class="label">Товары:</span>
-${itemsHtml || '  нет товаров'}
-</div>`;
-}
-
-document.getElementById('orderId').addEventListener('keydown', (e) => {
+document.getElementById('searchBtn').addEventListener('click', searchOrder);
+inputEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') searchOrder();
 });
 </script>
